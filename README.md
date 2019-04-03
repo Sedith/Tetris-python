@@ -1,6 +1,6 @@
 # TODO
-* handle collision for rotations
-* handle collision for tetramino creation
+* allow rotation when collision with translation
+* remove full lines
 * keyboard control
 * scoring
 * acceleration

@@ -9,6 +9,7 @@ import random
 ### Defines
 T = 1 ; S = 2 ; Z = 3 ; J = 4 ; L = 5 ; I = 6 ; O = 7
 down = (1,0) ; left = (0,-1) ; right = (0,1) ; rot = (-1,0)
+moves = [down, left, right, rot]
 
 
 ####################################################################################################
@@ -22,7 +23,7 @@ class Tetra:
             self._shape_from_color(color, rot)
         else:
             self.shape = shape
-        if anchor is None: anchor = self._gen_random_start()
+        if anchor is None: anchor = (0,0)
         self.anchor = anchor
 
     ### Properties
@@ -63,10 +64,14 @@ class Tetra:
     # Movement functions
     def rot_l(self, n = 1): self.shape = np.rot90(self.shape,n)
     def rot_r(self, n = 1): self.shape = np.rot90(self.shape,-n)
-    def move(self, m): self.anchor = (self.anchor[0]+m[0], self.anchor[1]+m[1])
     def move_d(self): self.move(down)
     def move_l(self): self.move(left)
     def move_r(self): self.move(right)
+    def move(self, m):
+        if m == rot:
+            self.rot_l()
+        else:
+            self.anchor = (self.anchor[0]+m[0], self.anchor[1]+m[1])
 
     # Status computation
     def get_full_pose(self):
@@ -123,10 +128,13 @@ class Board:
         for cell in pose: self.grid[cell] = '-'
 
     # Collision checks
-    def _check_coll(self, m):
-        assert m == left or m == right or m == down
+    def _check_coll(self, m = None):
+        assert m == left or m == right or m == down or m == rot
         next_tetra = Tetra(self.tetra.shape, self.tetra.anchor)
-        next_tetra.move(m)
+        if m == rot :
+            next_tetra.rot_l()
+        else:
+            next_tetra.move(m)
         next_pose = next_tetra.get_full_pose()
         curr_pose = self.tetra.get_full_pose()
         coll = False
@@ -134,20 +142,34 @@ class Board:
             if cell[1] < 0 or cell[1] > self.cols-1 or cell[0] > self.rows-1: coll = True ; break
             if cell not in curr_pose and self.grid[cell] != '-': coll = True ; break
         return coll
+    def _spawn_tetra(self):
+        self.tetra = None
+        offset = 1
+        tries = 10
+        for i in range(tries):
+            spawn = (0,random.randint(offset, self.cols-offset-1))
+            tetra = Tetra(anchor=spawn)
+            pose = tetra.get_full_pose()
+            coll = False
+            for cell in pose:
+                if cell[1] < 0 or cell[1] > self.cols-1: coll = True ; break
+                if cell and self.grid[cell] != '-': coll = True ; break
+            if not coll: self.tetra = tetra ; break
 
     # Tetramino updates
     def update(self, m):
-        assert m == left or m == right or m == down
+        assert m == left or m == right or m == down or m == rot
         if not self._check_coll(m):
             self._undraw_tetra()
             self.tetra.move(m)
             self._draw_tetra()
         elif m == down:
-            if self.tetra.anchor[0] != 0:
-                self.tetra = Tetra()
-                self._draw_tetra()
-            else:
-                return True
+            ## self.tetra = None au lieu de dans _spawn (dans remove truc)
+            # remove_tetra qui remet tetra à none et qui fait les suppressons de lignes si besoin
+            # 
+            self._spawn_tetra()
+            if self.tetra is None : return True
+            else: self._draw_tetra()
 
     # To string
     def __str__(self):
@@ -164,6 +186,8 @@ print(board, '\n\n\n')
 
 
 while 1:
-    time.sleep(0.05)
+    time.sleep(0.15)
+    if board.update(moves[random.randint(0,3)]) is True: break
+    print(board, '\n\n\n')
     if board.update(down) is True: break
     print(board, '\n\n\n')
