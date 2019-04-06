@@ -131,10 +131,7 @@ class Board:
     def _check_coll(self, m = None):
         assert m == left or m == right or m == down or m == rot
         next_tetra = Tetra(self.tetra.shape, self.tetra.anchor)
-        if m == rot :
-            next_tetra.rot_l()
-        else:
-            next_tetra.move(m)
+        next_tetra.move(m)
         next_pose = next_tetra.get_full_pose()
         curr_pose = self.tetra.get_full_pose()
         coll = False
