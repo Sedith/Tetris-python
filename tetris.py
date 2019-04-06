@@ -113,11 +113,11 @@ class Board:
     def grid(self,v): self._grid = v
 
     # Lines management
-    def remove_line(self, i):
-        self.grid = np.delete(self.grid, i, axis=0)
+    def remove_line(self, i_list):
+        for i in reversed(sorted(i_list)): self.grid = np.delete(self.grid, i, axis=0)
     def fill_grid(self):
-        assert self.grid.shape[0] < self.rows
-        self.grid = np.concatenate((np.full((self.rows-self.grid.shape[0],cols), '-', dtype=np.unicode_),grid), axis=0)
+        if self.grid.shape[0] < self.rows:
+            self.grid = np.concatenate((np.full((self.rows-self.grid.shape[0],self.cols), '-', dtype=np.unicode_),self.grid), axis=0)
 
     # Draw or undraw tetramino
     def _draw_tetra(self):
@@ -142,8 +142,9 @@ class Board:
             if cell[1] < 0 or cell[1] > self.cols-1 or cell[0] > self.rows-1: coll = True ; break
             if cell not in curr_pose and self.grid[cell] != '-': coll = True ; break
         return coll
+
+    # Tetramino management
     def _spawn_tetra(self):
-        self.tetra = None
         offset = 1
         tries = 10
         for i in range(tries):
@@ -156,6 +157,20 @@ class Board:
                 if cell and self.grid[cell] != '-': coll = True ; break
             if not coll: self.tetra = tetra ; break
 
+    def _remove_tetra(self):
+        self.tetra = None
+        i_list = []
+        for i,row in enumerate(self.grid):
+            print(row)
+            full = True
+            for cell in row:
+                if cell == '-':
+                    full = False
+                    break
+            if full: i_list.append(i)
+        self.remove_line(i_list)
+        self.fill_grid()
+
     # Tetramino updates
     def update(self, m):
         assert m == left or m == right or m == down or m == rot
@@ -164,9 +179,7 @@ class Board:
             self.tetra.move(m)
             self._draw_tetra()
         elif m == down:
-            ## self.tetra = None au lieu de dans _spawn (dans remove truc)
-            # remove_tetra qui remet tetra à none et qui fait les suppressons de lignes si besoin
-            # 
+            self._remove_tetra()
             self._spawn_tetra()
             if self.tetra is None : return True
             else: self._draw_tetra()
@@ -188,6 +201,7 @@ print(board, '\n\n\n')
 while 1:
     time.sleep(0.15)
     if board.update(moves[random.randint(0,3)]) is True: break
+    # if board.update(left) is True: break
     print(board, '\n\n\n')
     if board.update(down) is True: break
     print(board, '\n\n\n')
