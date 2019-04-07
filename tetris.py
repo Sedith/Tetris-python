@@ -128,7 +128,14 @@ class Board:
         for cell in pose: self.grid[cell] = '-'
 
     # Collision checks
-    def _check_coll(self, m = None):
+    # either :
+    # - pass tetra to tes as arg, then if it is none test for spawning
+    # - check if move is none, then check accordingly
+    # first is somehow cleaner here but requires changes in other functions
+    # in order to make the translation for rotation, output the colliding
+    # cells (or just an indication of where is the collision and how much
+    # to shift). Then make translation accordingly and change and check again.
+    def _check_coll(self, m):
         assert m == left or m == right or m == down or m == rot
         next_tetra = Tetra(self.tetra.shape, self.tetra.anchor)
         next_tetra.move(m)
@@ -158,7 +165,6 @@ class Board:
         self.tetra = None
         i_list = []
         for i,row in enumerate(self.grid):
-            print(row)
             full = True
             for cell in row:
                 if cell == '-':
@@ -169,6 +175,9 @@ class Board:
         self.fill_grid()
 
     # Tetramino updates
+    # Having next tetra preview is quite easy
+    # Scoring is updated when removing lines, very easy to implement
+    # Check online how score is computed in other games ?
     def update(self, m):
         assert m == left or m == right or m == down or m == rot
         if not self._check_coll(m):
@@ -194,7 +203,12 @@ cols = 10
 board = Board(rows, cols)
 print(board, '\n\n\n')
 
-
+# How to keyboard control ? Either :
+# - having a runing clock and test it every loop if it time is dividable by
+#   given period of fall, if so fall else check for keyboard else loop
+# - have 2 threads, one for fall and one for fall and one for control
+# first may result in some keyboard lag in controling, but probably much easier
+# to implement than second which i don't even know if is doable
 while 1:
     time.sleep(0.15)
     if board.update(moves[random.randint(0,3)]) is True: break
