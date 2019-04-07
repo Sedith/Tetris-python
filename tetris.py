@@ -10,19 +10,39 @@ import random
 T = 1 ; S = 2 ; Z = 3 ; J = 4 ; L = 5 ; I = 6 ; O = 7
 down = (1,0) ; left = (0,-1) ; right = (0,1) ; rot = (-1,0)
 moves = [down, left, right, rot]
-
-
+empty_cell = '-'
+moving_cell = 'X'
+used_cell = 'O'
 ####################################################################################################
 ### Tetraminos
+### Generators
+def shape_from_color(color, rot = 0):
+    assert 1 <= color <= 7
+    tetra_list = [ [], # element zero for convenience ; so that tetraminos(J) outputs a J
+    	[[1, 1, 1],
+         [0, 1, 0]],
+    	[[0, 2, 2],
+    	 [2, 2, 0]],
+    	[[3, 3, 0],
+    	 [0, 3, 3]],
+    	[[4, 0, 0],
+    	 [4, 4, 4]],
+    	[[0, 0, 5],
+    	 [5, 5, 5]],
+    	[[6, 6, 6, 6]],
+    	[[7, 7],
+    	 [7, 7]]]
+    return np.rot90(tetra_list[color], rot)
+def gen_random_color(): return random.randint(1,7)
+def gen_random_rot(): return random.randint(0,3)
+def gen_random_start(cols, offset = 1): return (0,random.randint(offset, cols-offset-1))
+def gen_random_shape(): return shape_from_color(gen_random_color(), gen_random_rot())
+
 class Tetra:
     ### Init
     def __init__(self, shape = None, anchor = None):
-        if shape is None:
-            color = self._gen_random_color()
-            rot = self._gen_random_rot()
-            self._shape_from_color(color, rot)
-        else:
-            self.shape = shape
+        if shape is None: shape = gen_random_shape()
+        self.shape = shape
         if anchor is None: anchor = (0,0)
         self.anchor = anchor
 
@@ -35,31 +55,6 @@ class Tetra:
     def shape(self): return self._shape
     @shape.setter
     def shape(self,v): self._shape = v
-
-    ### Shape generator
-    def _shape_from_color(self, color, rot  = 0):
-        assert 1 <= color <= 7
-        tetra_list = [ [], # element zero for convenience ; so that tetraminos(J) outputs a J
-        	[[1, 1, 1],
-             [0, 1, 0]],
-        	[[0, 2, 2],
-        	 [2, 2, 0]],
-        	[[3, 3, 0],
-        	 [0, 3, 3]],
-        	[[4, 0, 0],
-        	 [4, 4, 4]],
-        	[[0, 0, 5],
-        	 [5, 5, 5]],
-        	[[6, 6, 6, 6]],
-        	[[7, 7],
-        	 [7, 7]]]
-        self.shape = tetra_list[color]
-        self.rot_l(rot)
-
-    # Random generation of tetramino
-    def _gen_random_color(self): return random.randint(1,7)
-    def _gen_random_rot(self): return random.randint(0,3)
-    def _gen_random_start(self): return (0,random.randint(3,6))
 
     # Movement functions
     def rot_l(self, n = 1): self.shape = np.rot90(self.shape,n)
@@ -84,7 +79,8 @@ class Tetra:
 
     # To string
     def __str__(self):
-        return str(self.shape)+'  @ '+str(self.anchor)
+        # return str(self.shape)+'  @ '+str(self.anchor)
+        return str(self.shape)
 
 
 ####################################################################################################
@@ -94,8 +90,9 @@ class Board:
     def __init__(self, rows = None, cols = None):
         self.rows = rows
         self.cols = cols
-        self.grid = np.full((rows,cols), '-', dtype=np.unicode_)
+        self.grid = np.full((rows,cols), empty_cell, dtype=np.unicode_)
         self.tetra = Tetra()
+        self.next_shape = gen_random_shape()
         self._draw_tetra()
 
     # Properties
@@ -117,49 +114,51 @@ class Board:
         for i in reversed(sorted(i_list)): self.grid = np.delete(self.grid, i, axis=0)
     def fill_grid(self):
         if self.grid.shape[0] < self.rows:
-            self.grid = np.concatenate((np.full((self.rows-self.grid.shape[0],self.cols), '-', dtype=np.unicode_),self.grid), axis=0)
+            self.grid = np.concatenate((np.full((self.rows-self.grid.shape[0],self.cols), empty_cell, dtype=np.unicode_),self.grid), axis=0)
 
     # Draw or undraw tetramino
     def _draw_tetra(self):
         pose = self.tetra.get_full_pose()
         for cell in pose: self.grid[cell] = self.tetra.get_color()
+        # for cell in pose: self.grid[cell] = moving_cell
+    def _lock_tetra(self):
+        pose = self.tetra.get_full_pose()
+        for cell in pose: self.grid[cell] = self.tetra.get_color()
+        # for cell in pose: self.grid[cell] = used_cell
     def _undraw_tetra(self):
         pose = self.tetra.get_full_pose()
-        for cell in pose: self.grid[cell] = '-'
+        for cell in pose: self.grid[cell] = empty_cell
 
     # Collision checks
-    # either :
-    # - pass tetra to tes as arg, then if it is none test for spawning
-    # - check if move is none, then check accordingly
-    # first is somehow cleaner here but requires changes in other functions
     # in order to make the translation for rotation, output the colliding
     # cells (or just an indication of where is the collision and how much
     # to shift). Then make translation accordingly and change and check again.
-    def _check_coll(self, m):
-        assert m == left or m == right or m == down or m == rot
-        next_tetra = Tetra(self.tetra.shape, self.tetra.anchor)
-        next_tetra.move(m)
-        next_pose = next_tetra.get_full_pose()
-        curr_pose = self.tetra.get_full_pose()
-        coll = False
-        for cell in next_pose:
-            if cell[1] < 0 or cell[1] > self.cols-1 or cell[0] > self.rows-1: coll = True ; break
-            if cell not in curr_pose and self.grid[cell] != '-': coll = True ; break
+    def _check_coll(self, tetra):
+        pose = tetra.get_full_pose()
+        if self.tetra is not None: curr_pose = self.tetra.get_full_pose()
+        else: curr_pose = []
+        coll = []
+        for cell in pose:
+            # print(cell) ###DEBUG
+            if cell[1] < 0 or cell[1] > self.cols-1 or cell[0] > self.rows-1:
+                coll.append(cell) ; continue
+            if cell not in curr_pose and self.grid[cell] != empty_cell:
+                coll.append(cell) ; continue
+        # print(coll) ###DEBUG
         return coll
 
     # Tetramino management
     def _spawn_tetra(self):
         offset = 1
-        tries = 10
+        tries = 20
+        success = False
         for i in range(tries):
-            spawn = (0,random.randint(offset, self.cols-offset-1))
-            tetra = Tetra(anchor=spawn)
-            pose = tetra.get_full_pose()
-            coll = False
-            for cell in pose:
-                if cell[1] < 0 or cell[1] > self.cols-1: coll = True ; break
-                if cell and self.grid[cell] != '-': coll = True ; break
-            if not coll: self.tetra = tetra ; break
+            spawn = gen_random_start(self.cols, offset)
+            tetra = Tetra(self.next_shape,spawn)
+            if self._check_coll(tetra) == []: success = True ; break
+        if success:
+            self.tetra = tetra
+            self.next_shape = gen_random_shape()
 
     def _remove_tetra(self):
         self.tetra = None
@@ -167,7 +166,7 @@ class Board:
         for i,row in enumerate(self.grid):
             full = True
             for cell in row:
-                if cell == '-':
+                if cell == empty_cell:
                     full = False
                     break
             if full: i_list.append(i)
@@ -175,16 +174,19 @@ class Board:
         self.fill_grid()
 
     # Tetramino updates
-    # Having next tetra preview is quite easy
     # Scoring is updated when removing lines, very easy to implement
     # Check online how score is computed in other games ?
     def update(self, m):
         assert m == left or m == right or m == down or m == rot
-        if not self._check_coll(m):
+        next_tetra = Tetra(self.tetra.shape, self.tetra.anchor)
+        next_tetra.move(m)
+        collisions = self._check_coll(next_tetra)
+        if collisions == []:
             self._undraw_tetra()
             self.tetra.move(m)
             self._draw_tetra()
         elif m == down:
+            self._lock_tetra()
             self._remove_tetra()
             self._spawn_tetra()
             if self.tetra is None : return True
@@ -192,7 +194,11 @@ class Board:
 
     # To string
     def __str__(self):
-        return str(self.grid)
+        return ('\n\n\n\n' +
+                'Next tetra :\n' +
+                str(np.matrix(self.next_shape)) + '\n' +
+                '\n' +
+                str(self.grid))
 
 
 ####################################################################################################
@@ -207,12 +213,12 @@ print(board, '\n\n\n')
 # - having a runing clock and test it every loop if it time is dividable by
 #   given period of fall, if so fall else check for keyboard else loop
 # - have 2 threads, one for fall and one for fall and one for control
-# first may result in some keyboard lag in controling, but probably much easier
 # to implement than second which i don't even know if is doable
+# first may result in some keyboard lag in controling, but probably much easier
 while 1:
     time.sleep(0.15)
     if board.update(moves[random.randint(0,3)]) is True: break
     # if board.update(left) is True: break
-    print(board, '\n\n\n')
+    print(board)
     if board.update(down) is True: break
-    print(board, '\n\n\n')
+    print(board)
