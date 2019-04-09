@@ -7,46 +7,62 @@ import random
 
 ####################################################################################################
 ### Defines
+# List of color
 T = 1 ; S = 2 ; Z = 3 ; J = 4 ; L = 5 ; I = 6 ; O = 7
+# List of allowed movements
 down = (1,0) ; left = (0,-1) ; right = (0,1) ; rot = (-1,0)
 moves = [down, left, right, rot]
+# List of tetraminos
+tetra_list = [  [], # element zero for convenience; so that tetraminos(J) outputs a J
+                [[1, 1, 1],
+                 [0, 1, 0]],
+            	[[0, 2, 2],
+            	 [2, 2, 0]],
+            	[[3, 3, 0],
+            	 [0, 3, 3]],
+            	[[4, 0, 0],
+            	 [4, 4, 4]],
+            	[[0, 0, 5],
+            	 [5, 5, 5]],
+            	[[6, 6, 6, 6]],
+            	[[7, 7],
+            	 [7, 7]]]
+# List of cell format status
 empty_cell = '-'
 moving_cell = 'X'
 used_cell = 'O'
+
+
 ####################################################################################################
-### Tetraminos
 ### Generators
 def shape_from_color(color, rot = 0):
     assert 1 <= color <= 7
-    tetra_list = [ [], # element zero for convenience ; so that tetraminos(J) outputs a J
-    	[[1, 1, 1],
-         [0, 1, 0]],
-    	[[0, 2, 2],
-    	 [2, 2, 0]],
-    	[[3, 3, 0],
-    	 [0, 3, 3]],
-    	[[4, 0, 0],
-    	 [4, 4, 4]],
-    	[[0, 0, 5],
-    	 [5, 5, 5]],
-    	[[6, 6, 6, 6]],
-    	[[7, 7],
-    	 [7, 7]]]
     return np.rot90(tetra_list[color], rot)
+
+def gen_random_start(cols, offset = 1): return (0,random.randint(offset, cols-offset-1))
 def gen_random_color(): return random.randint(1,7)
 def gen_random_rot(): return random.randint(0,3)
-def gen_random_start(cols, offset = 1): return (0,random.randint(offset, cols-offset-1))
 def gen_random_shape(): return shape_from_color(gen_random_color(), gen_random_rot())
 
+
+####################################################################################################
+### Tetraminos
 class Tetra:
-    ### Init
-    def __init__(self, shape = None, anchor = None):
+    """
+    This class represent one instance of tetraminos
+    It defines the functions to move it (i.e. modify anchor as desired) and
+    functions to compute the state of the tetramino (color, list of occupied cells..)
+    Attributes :
+        shape   - shape as defined in tetra_list
+        anchor  - position of topleft cell of the shape
+    """
+    ## Init
+    def __init__(self, shape = None, anchor = (0,0)):
         if shape is None: shape = gen_random_shape()
         self.shape = shape
-        if anchor is None: anchor = (0,0)
         self.anchor = anchor
 
-    ### Properties
+    ## Properties
     @property
     def anchor(self): return self._anchor
     @anchor.setter
@@ -56,19 +72,15 @@ class Tetra:
     @shape.setter
     def shape(self,v): self._shape = v
 
-    # Movement functions
-    def rot_l(self, n = 1): self.shape = np.rot90(self.shape,n)
-    def rot_r(self, n = 1): self.shape = np.rot90(self.shape,-n)
-    def move_d(self): self.move(down)
-    def move_l(self): self.move(left)
-    def move_r(self): self.move(right)
+
+    ## Movement functions
     def move(self, m):
         if m == rot:
-            self.rot_l()
+            self.shape = np.rot90(self.shape,n)
         else:
             self.anchor = (self.anchor[0]+m[0], self.anchor[1]+m[1])
 
-    # Status computation
+    ## Status computation
     def get_full_pose(self):
         pose = []
         for (i,j),cell in np.ndenumerate(self.shape):
@@ -77,7 +89,7 @@ class Tetra:
         return pose
     def get_color(self): return np.amax(self.shape)
 
-    # To string
+    ## To string
     def __str__(self):
         # return str(self.shape)+'  @ '+str(self.anchor)
         return str(self.shape)
@@ -86,7 +98,18 @@ class Tetra:
 ####################################################################################################
 ### Board
 class Board:
-    ### Init
+    """ This class represent the tetris board
+    It has a fixed size grid, an active tetramino, and a preview of the upcoming
+    shape
+    Each cell has 3 possible status : empty, moving, or used
+    Attributes :
+        rows        - number of rows in grid
+        cols        - number of cols in grid
+        grid        - a numpy matrix of cells (pre-defined chars)
+        tetra       - the current active tetramino
+        next_shape  - the shape of next tetramino to spawn
+    """
+    ## Init
     def __init__(self, rows = None, cols = None):
         self.rows = rows
         self.cols = cols
@@ -95,7 +118,7 @@ class Board:
         self.next_shape = gen_random_shape()
         self._draw_tetra()
 
-    # Properties
+    ## Properties
     @property
     def rows(self): return self._rows
     @rows.setter
@@ -109,14 +132,15 @@ class Board:
     @grid.setter
     def grid(self,v): self._grid = v
 
-    # Lines management
+    ## Lines management
     def remove_line(self, i_list):
-        for i in reversed(sorted(i_list)): self.grid = np.delete(self.grid, i, axis=0)
+        for i in reversed(sorted(i_list)):
+            self.grid = np.delete(self.grid, i, axis=0)
     def fill_grid(self):
         if self.grid.shape[0] < self.rows:
             self.grid = np.concatenate((np.full((self.rows-self.grid.shape[0],self.cols), empty_cell, dtype=np.unicode_),self.grid), axis=0)
 
-    # Draw or undraw tetramino
+    ## Draw or undraw tetramino
     def _draw_tetra(self):
         pose = self.tetra.get_full_pose()
         for cell in pose: self.grid[cell] = self.tetra.get_color()
@@ -129,7 +153,7 @@ class Board:
         pose = self.tetra.get_full_pose()
         for cell in pose: self.grid[cell] = empty_cell
 
-    # Collision checks
+    ## Collision checks
     # in order to make the translation for rotation, output the colliding
     # cells (or just an indication of where is the collision and how much
     # to shift). Then make translation accordingly and change and check again.
@@ -139,15 +163,15 @@ class Board:
         else: curr_pose = []
         coll = []
         for cell in pose:
-            # print(cell) ###DEBUG
+            # print(cell) #DEBUG
             if cell[1] < 0 or cell[1] > self.cols-1 or cell[0] > self.rows-1:
                 coll.append(cell) ; continue
             if cell not in curr_pose and self.grid[cell] != empty_cell:
                 coll.append(cell) ; continue
-        # print(coll) ###DEBUG
+        # print(coll) #DEBUG
         return coll
 
-    # Tetramino management
+    ## Tetramino management
     def _spawn_tetra(self):
         offset = 1
         tries = 20
@@ -173,7 +197,7 @@ class Board:
         self.remove_line(i_list)
         self.fill_grid()
 
-    # Tetramino updates
+    ## Tetramino updates
     # Scoring is updated when removing lines, very easy to implement
     # Check online how score is computed in other games ?
     def update(self, m):
@@ -192,7 +216,7 @@ class Board:
             if self.tetra is None : return True
             else: self._draw_tetra()
 
-    # To string
+    ## To string
     def __str__(self):
         return ('\n\n\n\n' +
                 'Next tetra :\n' +
@@ -207,7 +231,7 @@ rows = 20
 cols = 10
 
 board = Board(rows, cols)
-print(board, '\n\n\n')
+print(board)
 
 # How to keyboard control ? Either :
 # - having a runing clock and test it every loop if it time is dividable by
