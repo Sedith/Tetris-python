@@ -2,8 +2,13 @@
 ### Imports
 import numpy as np
 import time
+import threading
 import random
-
+import sys
+import queue
+import termios
+import tty
+import fcntl
 
 ####################################################################################################
 ### Defines
@@ -230,19 +235,53 @@ class Board:
 rows = 20
 cols = 10
 
-board = Board(rows, cols)
-print(board)
+def getch():
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    oldflags = fcntl.fcntl(fd, fcntl.F_GETFL)
+    fcntl.fcntl(fd, fcntl.F_SETFL, oldflags)
+    try:
+        tty.setcbreak(sys.stdin.fileno())
+        c = sys.stdin.read(1)
+    finally:
+        termios.tcsetattr(sys.stdin.fileno(), termios.TCSAFLUSH, old_settings)
+        fcntl.fcntl(fd, fcntl.F_SETFL, oldflags)
+    return c
 
-# How to keyboard control ? Either :
-# - having a runing clock and test it every loop if it time is dividable by
-#   given period of fall, if so fall else check for keyboard else loop
-# - have 2 threads, one for fall and one for fall and one for control
-# to implement than second which i don't even know if is doable
-# first may result in some keyboard lag in controling, but probably much easier
-while 1:
-    time.sleep(0.15)
-    if board.update(moves[random.randint(0,3)]) is True: break
-    # if board.update(left) is True: break
-    print(board)
-    if board.update(down) is True: break
-    print(board)
+def read_ch(input_queue):
+    print('Ready for keyboard input:')
+    while (True):
+        input_queue.put(getch())
+
+input_queue = queue.Queue()
+
+input_thread = threading.Thread(target=read_ch, args=(input_queue,), daemon=True)
+input_thread.start()
+
+last_update = time.time()
+while True:
+    if time.time()-last_update>0.5:
+        print(".")
+        last_update = time.time()
+
+    if not input_queue.empty():
+        print("\ninput du cul:", input_queue.get(), '\n')
+
+
+
+# board = Board(rows, cols)
+# print(board)
+#
+# # How to keyboard control ? Either :
+# # - having a runing clock and test it every loop if it time is dividable by
+# #   given period of fall, if so fall else check for keyboard else loop
+# # - have 2 threads, one for fall and one for fall and one for control
+# # to implement than second which i don't even know if is doable
+# # first may result in some keyboard lag in controling, but probably much easier
+# while 1:
+#     time.sleep(0.15)
+#     if board.update(moves[random.randint(0,3)]) is True: break
+#     # if board.update(left) is True: break
+#     print(board)
+#     if board.update(down) is True: break
+#     print(board)
