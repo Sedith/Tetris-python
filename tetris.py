@@ -2,13 +2,10 @@
 ### Imports
 import numpy as np
 import time
-import threading
+# import pygame
 import random
-import sys
-import queue
-import termios
-import tty
-import fcntl
+import threading
+import sys,tty,termios
 
 ####################################################################################################
 ### Defines
@@ -81,7 +78,7 @@ class Tetra:
     ## Movement functions
     def move(self, m):
         if m == rot:
-            self.shape = np.rot90(self.shape,n)
+            self.shape = np.rot90(self.shape,1)
         else:
             self.anchor = (self.anchor[0]+m[0], self.anchor[1]+m[1])
 
@@ -234,54 +231,64 @@ class Board:
 ### Main
 rows = 20
 cols = 10
+period = 0.5
 
-def getch():
+
+
+def _getch():
     fd = sys.stdin.fileno()
     old_settings = termios.tcgetattr(fd)
-    oldflags = fcntl.fcntl(fd, fcntl.F_GETFL)
-    fcntl.fcntl(fd, fcntl.F_SETFL, oldflags)
     try:
-        tty.setcbreak(sys.stdin.fileno())
-        c = sys.stdin.read(1)
+        tty.setraw(sys.stdin.fileno())
+        ch = sys.stdin.read(1)
     finally:
-        termios.tcsetattr(sys.stdin.fileno(), termios.TCSAFLUSH, old_settings)
-        fcntl.fcntl(fd, fcntl.F_SETFL, oldflags)
-    return c
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    return ch
 
-def read_ch(input_queue):
-    print('Ready for keyboard input:')
-    while (True):
-        input_queue.put(getch())
+def get_input():
+    while(1):
+        k0=_getch()
+        if k0 == ' ': return 'exit'
+        if k0 != '\x1b': continue
+        k1=_getch()
+        k2=_getch()
+        k = k0+k1+k2
+        if k=='\x1b[A':
+            # print ("up")
+            return rot
+        elif k=='\x1b[B':
+            # print ("down")
+            return down
+        elif k=='\x1b[C':
+            # print ("right")
+            return right
+        elif k=='\x1b[D':
+            # print ("left")
+            return left
 
-input_queue = queue.Queue()
+def fall(board, period):
+    last_update = time.time()
+    game_over = False
+    while (1):
+        if time.time()-last_update > period:
+            game_over = board.update(down)
+            last_update = time.time()
+        if game_over: break
 
-input_thread = threading.Thread(target=read_ch, args=(input_queue,), daemon=True)
-input_thread.start()
+board = Board(rows, cols)
+period = 1
+game_over = False
 
-last_update = time.time()
-while True:
-    if time.time()-last_update>0.5:
-        print(".")
-        last_update = time.time()
+thread_fall = threading.Thread(target = fall, args = (board,period, ), daemon=True)
+thread_fall.start()
 
-    if not input_queue.empty():
-        print("\ninput du cul:", input_queue.get(), '\n')
+print(board)
+while 1:
+    input = get_input()
+    if input == 'exit': break
+    game_over = board.update(input)
+    print(board)
+    if game_over: break
 
-
-
-# board = Board(rows, cols)
-# print(board)
-#
-# # How to keyboard control ? Either :
-# # - having a runing clock and test it every loop if it time is dividable by
-# #   given period of fall, if so fall else check for keyboard else loop
-# # - have 2 threads, one for fall and one for fall and one for control
-# # to implement than second which i don't even know if is doable
-# # first may result in some keyboard lag in controling, but probably much easier
-# while 1:
-#     time.sleep(0.15)
-#     if board.update(moves[random.randint(0,3)]) is True: break
-#     # if board.update(left) is True: break
-#     print(board)
-#     if board.update(down) is True: break
-#     print(board)
+## Kill thread ?
+# Make a class game which does all these stuff and has a proper game over attr
