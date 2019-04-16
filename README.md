@@ -8,3 +8,4 @@
 * acceleration
 * gui ? (-> use pygame)
 * proper game over screen
+* ffs split files and make the code decent so that I wont be ashamed of myself each time I open this repo
