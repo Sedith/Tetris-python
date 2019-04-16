@@ -6,5 +6,5 @@
 * print board at each fall in thread (probably doable with Game class)
 * scoring
 * acceleration
-* gui
-* proper game over
+* gui ? (-> use pygame)
+* proper game over screen
