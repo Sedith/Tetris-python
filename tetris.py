@@ -29,10 +29,6 @@ tetra_list = [  [], # element zero for convenience; so that tetraminos(J) output
             	[[6, 6, 6, 6]],
             	[[7, 7],
             	 [7, 7]]]
-# List of cell format status
-empty_cell = '-'
-moving_cell = 'X'
-used_cell = 'O'
 
 
 ####################################################################################################
@@ -99,15 +95,40 @@ class Tetra:
 
 ####################################################################################################
 ### Board
+class Cell:
+    """ This class represent a grid in the tetris Board
+    Each cell has 3 possible status : empty, moving, or used
+    Attributes:
+        state       - current state of the cell
+    """
+    # List of cell format status
+    empty_cell = '-'
+    used_cell = 'X'
+    locked_cell = 'O'
+
+    def __init__(self):
+        self.empty()
+
+    def empty(self):
+        self._state = empty_cell
+    def use(self):
+        self._state = moving_cell
+    def lock(self):
+        self._state = locked_cell
+    def is_empty(self):
+        return self._state == empty_cell
+    def __str__(self):
+        return self._state
+
+
 class Board:
     """ This class represent the tetris board
     It has a fixed size grid, an active tetramino, and a preview of the upcoming
     shape
-    Each cell has 3 possible status : empty, moving, or used
     Attributes :
         rows        - number of rows in grid
         cols        - number of cols in grid
-        grid        - a numpy matrix of cells (pre-defined chars)
+        grid        - a numpy matrix of cells
         tetra       - the current active tetramino
         next_shape  - the shape of next tetramino to spawn
     """
