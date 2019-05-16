@@ -6,6 +6,8 @@ import time
 import random
 import threading
 import sys,tty,termios
+import pynput
+from math import floor
 
 ####################################################################################################
 ### Defines
@@ -46,8 +48,7 @@ def gen_random_shape(): return shape_from_color(gen_random_color(), gen_random_r
 ####################################################################################################
 ### Tetraminos
 class Tetra:
-    """
-    This class represent one instance of tetraminos
+    """ This class represent one instance of tetraminos
     It defines the functions to move it (i.e. modify anchor as desired) and
     functions to compute the state of the tetramino (color, list of occupied cells..)
     Attributes :
@@ -74,7 +75,7 @@ class Tetra:
     ## Movement functions
     def move(self, m):
         if m == rot:
-            self.shape = np.rot90(self.shape,1)
+            self.shape = np.rot90(self.shape,-1)
         else:
             self.anchor = (self.anchor[0]+m[0], self.anchor[1]+m[1])
 
@@ -95,32 +96,6 @@ class Tetra:
 
 ####################################################################################################
 ### Board
-class Cell:
-    """ This class represent a grid in the tetris Board
-    Each cell has 3 possible status : empty, moving, or used
-    Attributes:
-        state       - current state of the cell
-    """
-    # List of cell format status
-    empty_cell = '-'
-    used_cell = 'X'
-    locked_cell = 'O'
-
-    def __init__(self):
-        self.empty()
-
-    def empty(self):
-        self._state = empty_cell
-    def use(self):
-        self._state = moving_cell
-    def lock(self):
-        self._state = locked_cell
-    def is_empty(self):
-        return self._state == empty_cell
-    def __str__(self):
-        return self._state
-
-
 class Board:
     """ This class represent the tetris board
     It has a fixed size grid, an active tetramino, and a preview of the upcoming
@@ -132,11 +107,16 @@ class Board:
         tetra       - the current active tetramino
         next_shape  - the shape of next tetramino to spawn
     """
+    # List of cell format status
+    empty_cell = ' '
+    used_cell = '\u25A0'
+    locked_cell = '\u25A0'
+
     ## Init
-    def __init__(self, rows = None, cols = None):
+    def __init__(self, rows, cols):
         self.rows = rows
         self.cols = cols
-        self.grid = np.full((rows,cols), empty_cell, dtype=np.unicode_)
+        self.grid = np.full((rows,cols), self.empty_cell, dtype=np.unicode_)
         self.tetra = Tetra()
         self.next_shape = gen_random_shape()
         self._draw_tetra()
@@ -155,26 +135,30 @@ class Board:
     @grid.setter
     def grid(self,v): self._grid = v
 
+    ## Cell management
+    def is_empty(self,i,j):
+        return self.grid[i,j] == self.empty_cell
+
     ## Lines management
     def remove_line(self, i_list):
         for i in reversed(sorted(i_list)):
             self.grid = np.delete(self.grid, i, axis=0)
     def fill_grid(self):
         if self.grid.shape[0] < self.rows:
-            self.grid = np.concatenate((np.full((self.rows-self.grid.shape[0],self.cols), empty_cell, dtype=np.unicode_),self.grid), axis=0)
+            self.grid = np.concatenate((np.full((self.rows-self.grid.shape[0],self.cols), self.empty_cell, dtype=np.unicode_),self.grid), axis=0)
 
     ## Draw or undraw tetramino
     def _draw_tetra(self):
         pose = self.tetra.get_full_pose()
-        for cell in pose: self.grid[cell] = self.tetra.get_color()
-        # for cell in pose: self.grid[cell] = moving_cell
+        # for cell in pose: self.grid[cell] = self.tetra.get_color()
+        for cell in pose: self.grid[cell] = self.used_cell
     def _lock_tetra(self):
         pose = self.tetra.get_full_pose()
-        for cell in pose: self.grid[cell] = self.tetra.get_color()
-        # for cell in pose: self.grid[cell] = used_cell
+        # for cell in pose: self.grid[cell] = self.tetra.get_color()
+        for cell in pose: self.grid[cell] = self.locked_cell
     def _undraw_tetra(self):
         pose = self.tetra.get_full_pose()
-        for cell in pose: self.grid[cell] = empty_cell
+        for cell in pose: self.grid[cell] = self.empty_cell
 
     ## Collision checks
     # in order to make the translation for rotation, output the colliding
@@ -189,7 +173,7 @@ class Board:
             # print(cell) #DEBUG
             if cell[1] < 0 or cell[1] > self.cols-1 or cell[0] > self.rows-1:
                 coll.append(cell) ; continue
-            if cell not in curr_pose and self.grid[cell] != empty_cell:
+            if cell not in curr_pose and self.grid[cell] != self.empty_cell:
                 coll.append(cell) ; continue
         # print(coll) #DEBUG
         return coll
@@ -213,7 +197,7 @@ class Board:
         for i,row in enumerate(self.grid):
             full = True
             for cell in row:
-                if cell == empty_cell:
+                if cell == self.empty_cell:
                     full = False
                     break
             if full: i_list.append(i)
@@ -247,69 +231,98 @@ class Board:
                 '\n' +
                 str(self.grid))
 
+####################################################################################################
+### Game_session
+class Game_session:
+    """ This class represent a session of a tetris game.
+    It contains the game board, status, and parameters.
+    It includes the game management (loop, display) functions.
+    It also includes the keyb Key.upoard control.
+    Attributes :
+        board       - game board
+        over        - bool indicating when game is lost
+        speed       - falling speed
+        input       - last keyboard input
+    """
+    ## Init
+    def __init__(self, rows, cols):
+        self.board = Board(rows, cols)
+        self.over = False
+        self.speed = 0.5
+        self.input = None
+
+    ## Properties
+    @property
+    def board(self): return self._board
+    @board.setter
+    def board(self,v): self._board = v
+    @property
+    def over(self): return self._over
+    @over.setter
+    def over(self,v): self._over = v
+
+    ### Display
+    def display(self):
+        print(self.board)
+
+    ### Falling loop for threading
+    def fall_loop(self):
+        last_update = time.time()
+        while (1):
+            if time.time()-last_update > self.speed:
+                self.over = self.board.update(down)
+                last_update = time.time()
+            if self.over: break
+
+    ### Update from input
+    def update(self,input):
+        self.board.update(input)
+
+    ### Keyboard control
+    def on_press(self,key):
+        if key == pynput.keyboard.Key.up:
+            self.board.update(rot)
+        if key == pynput.keyboard.Key.left:
+            self.board.update(left)
+        if key == pynput.keyboard.Key.down:
+            self.board.update(down)
+        if key == pynput.keyboard.Key.right:
+            self.board.update(right)
+        if key == pynput.keyboard.Key.space:
+            self.over = True
+
+    def print_game_over(self):
+        c_row = floor(self.board.rows/2)
+        c_col = floor(self.board.cols/2)
+        self.board.grid[c_row,c_col-4] = 'G'
+        self.board.grid[c_row,c_col-3] = 'A'
+        self.board.grid[c_row,c_col-2] = 'M'
+        self.board.grid[c_row,c_col-1] = 'E'
+        self.board.grid[c_row,c_col-0] = ' '
+        self.board.grid[c_row,c_col+1] = 'O'
+        self.board.grid[c_row,c_col+2] = 'V'
+        self.board.grid[c_row,c_col+3] = 'E'
+        self.board.grid[c_row,c_col+4] = 'R'
+        self.display()
 
 ####################################################################################################
 ### Main
 rows = 20
-cols = 10
-period = 0.5
+cols = 11
 
+game = Game_session(rows,cols)
 
-
-def _getch():
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)
-    try:
-        tty.setraw(sys.stdin.fileno())
-        ch = sys.stdin.read(1)
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-    return ch
-
-def get_input():
-    while(1):
-        k0=_getch()
-        if k0 == ' ': return 'exit'
-        if k0 != '\x1b': continue
-        k1=_getch()
-        k2=_getch()
-        k = k0+k1+k2
-        if k=='\x1b[A':
-            # print ("up")
-            return rot
-        elif k=='\x1b[B':
-            # print ("down")
-            return down
-        elif k=='\x1b[C':
-            # print ("right")
-            return right
-        elif k=='\x1b[D':
-            # print ("left")
-            return left
-
-def fall(board, period):
-    last_update = time.time()
-    game_over = False
-    while (1):
-        if time.time()-last_update > period:
-            game_over = board.update(down)
-            last_update = time.time()
-        if game_over: break
-
-board = Board(rows, cols)
-period = 1
-game_over = False
-
-thread_fall = threading.Thread(target = fall, args = (board,period, ), daemon=True)
+thread_fall = threading.Thread(target = game.fall_loop, daemon=True)
 thread_fall.start()
 
-print(board)
-while 1:
-    input = get_input()
-    if input == 'exit': break
-    game_over = board.update(input)
-    print(board)
-    if game_over: break
+listener = pynput.keyboard.Listener(on_press=game.on_press,on_release=None)
+listener.start()
 
-## Kill thread ?
-# Make a class game which does all these stuff and has a proper game over attr
+while not game.over:
+    game.display()
+
+    time.sleep(0.05)  #framerate
+listener.stop()
+thread_fall.join()
+game.print_game_over()
+print('byebye')
