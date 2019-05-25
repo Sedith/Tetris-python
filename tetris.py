@@ -5,7 +5,6 @@ import time
 # import pygame
 import random
 import threading
-import sys,tty,termios
 import pynput
 from math import floor
 
@@ -61,17 +60,6 @@ class Tetra:
         self.shape = shape
         self.anchor = anchor
 
-    ## Properties
-    @property
-    def anchor(self): return self._anchor
-    @anchor.setter
-    def anchor(self,v): self._anchor = v
-    @property
-    def shape(self): return self._shape
-    @shape.setter
-    def shape(self,v): self._shape = v
-
-
     ## Movement functions
     def move(self, m):
         if m == rot:
@@ -121,24 +109,6 @@ class Board:
         self.next_shape = gen_random_shape()
         self._draw_tetra()
 
-    ## Properties
-    @property
-    def rows(self): return self._rows
-    @rows.setter
-    def rows(self,v): self._rows = v
-    @property
-    def cols(self): return self._cols
-    @cols.setter
-    def cols(self,v): self._cols = v
-    @property
-    def grid(self): return self._grid
-    @grid.setter
-    def grid(self,v): self._grid = v
-
-    ## Cell management
-    def is_empty(self,i,j):
-        return self.grid[i,j] == self.empty_cell
-
     ## Lines management
     def remove_line(self, i_list):
         for i in reversed(sorted(i_list)):
@@ -156,9 +126,16 @@ class Board:
         pose = self.tetra.get_full_pose()
         # for cell in pose: self.grid[cell] = self.tetra.get_color()
         for cell in pose: self.grid[cell] = self.locked_cell
+        del_lines = self._remove_tetra()
+        over = self._spawn_tetra()
+        return over, del_lines
     def _undraw_tetra(self):
         pose = self.tetra.get_full_pose()
         for cell in pose: self.grid[cell] = self.empty_cell
+    def _update_tetra(self,next_tetra):
+        self._undraw_tetra()
+        self.tetra = next_tetra
+        self._draw_tetra()
 
     ## Collision checks
     # in order to make the translation for rotation, output the colliding
@@ -170,12 +147,10 @@ class Board:
         else: curr_pose = []
         coll = []
         for cell in pose:
-            # print(cell) #DEBUG
             if cell[1] < 0 or cell[1] > self.cols-1 or cell[0] > self.rows-1:
-                coll.append(cell) ; continue
-            if cell not in curr_pose and self.grid[cell] != self.empty_cell:
-                coll.append(cell) ; continue
-        # print(coll) #DEBUG
+                coll.append(cell)
+            elif cell not in curr_pose and self.grid[cell] != self.empty_cell:
+                coll.append(cell)
         return coll
 
     ## Tetramino management
@@ -190,6 +165,7 @@ class Board:
         if success:
             self.tetra = tetra
             self.next_shape = gen_random_shape()
+        return not success
 
     def _remove_tetra(self):
         self.tetra = None
@@ -203,33 +179,39 @@ class Board:
             if full: i_list.append(i)
         self.remove_line(i_list)
         self.fill_grid()
+        return len(i_list)
 
     ## Tetramino updates
-    # Scoring is updated when removing lines, very easy to implement
-    # Check online how score is computed in other games ?
     def update(self, m):
         assert m == left or m == right or m == down or m == rot
+        over = False
+        del_lines = 0
         next_tetra = Tetra(self.tetra.shape, self.tetra.anchor)
         next_tetra.move(m)
         collisions = self._check_coll(next_tetra)
         if collisions == []:
-            self._undraw_tetra()
-            self.tetra.move(m)
-            self._draw_tetra()
+            self._update_tetra(next_tetra)
+        elif m == rot:
+            length = len(collisions)
+            next_tetra_2 = Tetra(next_tetra.shape, next_tetra.anchor)
+            for i in range(0, len(collisions)+1):
+                next_tetra.move(right)
+                next_tetra_2.move(left)
+                if self._check_coll(next_tetra) == []:
+                    self._update_tetra(next_tetra)
+                    break
+                elif self._check_coll(next_tetra_2) == []:
+                    self._update_tetra(next_tetra_2)
+                    break
         elif m == down:
-            self._lock_tetra()
-            self._remove_tetra()
-            self._spawn_tetra()
-            if self.tetra is None : return True
-            else: self._draw_tetra()
+            over, del_lines = self._lock_tetra()
+            if self.tetra is not None :
+                self._draw_tetra()
+        return over, del_lines
 
     ## To string
     def __str__(self):
-        return ('\n\n\n\n' +
-                'Next tetra :\n' +
-                str(np.matrix(self.next_shape)) + '\n' +
-                '\n' +
-                str(self.grid))
+        return (str(self.grid))
 
 ####################################################################################################
 ### Game_session
@@ -243,52 +225,65 @@ class Game_session:
         over        - bool indicating when game is lost
         speed       - falling speed
         input       - last keyboard input
+        updated     - boolean true if there is undisplayed updates
+        score       - total score
     """
+    base_speed = 0.5
+
     ## Init
     def __init__(self, rows, cols):
         self.board = Board(rows, cols)
         self.over = False
-        self.speed = 0.5
+        self.speed = self.base_speed
         self.input = None
-
-    ## Properties
-    @property
-    def board(self): return self._board
-    @board.setter
-    def board(self,v): self._board = v
-    @property
-    def over(self): return self._over
-    @over.setter
-    def over(self,v): self._over = v
+        self.updated = False
+        self.score = 0
 
     ### Display
     def display(self):
-        print(self.board)
+        print('\n\n\n\n' +
+                'Next tetra :\n' +
+                str(np.matrix(self.board.next_shape)) + '\n' +
+                '\n' +
+                'Score : ' +
+                str(self.score) + '\n' +
+                str(self.board.grid))
+        self.updated = False
+
+    ### Scoring
+    def _score(self, del_lines):
+        self.score += del_lines**2
+        self.speed = max(self.base_speed - (floor(self.score/10)**2)*0.05,0.05)
 
     ### Falling loop for threading
+    def _update_down(self):
+        self.over, del_lines = self.board.update(down)
+        self._score(del_lines)
+        self.updated = True
+
     def fall_loop(self):
         last_update = time.time()
+        time.sleep(self.speed)
         while (1):
             if time.time()-last_update > self.speed:
-                self.over = self.board.update(down)
+                self._update_down()
                 last_update = time.time()
             if self.over: break
-
-    ### Update from input
-    def update(self,input):
-        self.board.update(input)
 
     ### Keyboard control
     def on_press(self,key):
         if key == pynput.keyboard.Key.up:
             self.board.update(rot)
-        if key == pynput.keyboard.Key.left:
+            self.updated = True
+        elif key == pynput.keyboard.Key.left:
             self.board.update(left)
-        if key == pynput.keyboard.Key.down:
-            self.board.update(down)
-        if key == pynput.keyboard.Key.right:
+            self.updated = True
+        elif key == pynput.keyboard.Key.down:
+            self._update_down()
+        elif key == pynput.keyboard.Key.right:
             self.board.update(right)
-        if key == pynput.keyboard.Key.space:
+            self.updated = True
+        elif key == pynput.keyboard.Key.space:
             self.over = True
 
     def print_game_over(self):
@@ -318,9 +313,10 @@ thread_fall.start()
 listener = pynput.keyboard.Listener(on_press=game.on_press,on_release=None)
 listener.start()
 
+game.display()
 while not game.over:
-    game.display()
-
+    if game.updated:
+        game.display()
     time.sleep(0.05)  #framerate
 listener.stop()
 thread_fall.join()
